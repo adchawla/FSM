@@ -33,3 +33,4 @@
 
 # CMake build directory
 build.win.x64/
+build.osx/
