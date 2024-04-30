@@ -3,9 +3,11 @@ cmake_minimum_required(VERSION 3.23)
 enable_testing()
 
 add_executable(unitTests
-    ConditionalStream.h
     ConditionalStream.cpp
+    ConditionalStream.h
     testFSMWithEnums.cpp
+    testFSMWithStatePattern.cpp
+    Turnstile.cpp
     Turnstile.h
 )
 

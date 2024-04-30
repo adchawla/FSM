@@ -1,10 +1,8 @@
 #include "ConditionalStream.h"
 #include "Turnstile.h"
 
+#include <array>
 #include <gtest/gtest.h>
-
-// states
-enum class eState { Locked, PaymentProcessing, PaymentFailed, PaymentSuccess, Unlocked };
 
 class FSMWithEnums {
 public:
@@ -44,7 +42,7 @@ private:
     std::tuple<std::string, std::string, int> _lastTransaction;
 
 public:
-    void dump();
+    void dump() const;
 
     const auto & getLastTransaction() const {
         return _lastTransaction;
@@ -61,25 +59,9 @@ public:
     }
 };
 
-const char * to_string(eState e) {
-    switch (e) {
-    case eState::Locked:
-        return "Locked";
-    case eState::PaymentProcessing:
-        return "PaymentProcessing";
-    case eState::PaymentFailed:
-        return "PaymentFailed";
-    case eState::PaymentSuccess:
-        return "PaymentSuccess";
-    case eState::Unlocked:
-        return "Unlocked";
-    }
-    return "unknown";
-}
-
 FSMWithEnums & FSMWithEnums::process(CardPresented event) {
     LOGGER << "EVENT: CardPresent\n";
-    switch (_state) {
+    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
     case eState::Locked:
         transitionToPaymentProcessing(_gateways[0], std::move(event.cardNumber));
         break;
@@ -92,7 +74,7 @@ FSMWithEnums & FSMWithEnums::process(CardPresented event) {
 
 FSMWithEnums & FSMWithEnums::process(TransactionDeclined event) {
     LOGGER << "EVENT: TransactionDeclined\n";
-    switch (_state) {
+    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
     case eState::PaymentProcessing:
         transitionToPaymentFailed(std::move(event.reason));
         break;
@@ -104,7 +86,7 @@ FSMWithEnums & FSMWithEnums::process(TransactionDeclined event) {
 
 FSMWithEnums & FSMWithEnums::process(TransactionSuccess event) {
     LOGGER << "EVENT: TransactionSuccess\n";
-    switch (_state) {
+    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
     case eState::PaymentProcessing:
         transitionToPaymentSuccessful(event.fare, event.balance);
         break;
@@ -116,7 +98,7 @@ FSMWithEnums & FSMWithEnums::process(TransactionSuccess event) {
 
 FSMWithEnums & FSMWithEnums::process(PersonPassed event) {
     LOGGER << "EVENT: PersonPassed\n";
-    switch (_state) {
+    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
     case eState::PaymentSuccess:
     case eState::Unlocked:
         transitionToLocked();
@@ -129,7 +111,7 @@ FSMWithEnums & FSMWithEnums::process(PersonPassed event) {
 
 FSMWithEnums & FSMWithEnums::process(Timeout event) {
     LOGGER << "EVENT: Timeout\n";
-    switch (_state) {
+    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
     case eState::PaymentProcessing:
         _retryCounts++;
         if (_retryCounts > 2) {
@@ -151,7 +133,7 @@ FSMWithEnums & FSMWithEnums::process(Timeout event) {
     return *this;
 }
 
-void FSMWithEnums::dump() {
+void FSMWithEnums::dump() const {
     LOGGER << "STATE: " << to_string(_state) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
            << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
 }

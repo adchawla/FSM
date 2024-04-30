@@ -1,7 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include <iostream>
+#include <functional>
 #include <sstream>
 #include <string>
 
@@ -95,34 +95,31 @@ struct TransactionSuccess {
 struct PersonPassed {};
 struct Timeout {};
 
-const char * to_string(SwingDoor::eStatus e) {
-    switch (e) {
-    case SwingDoor::eStatus::Closed:
-        return "Closed";
-    case SwingDoor::eStatus::Open:
-        return "Open";
-    }
-    return "unknown";
-}
+// states
+enum class eState { Locked, PaymentProcessing, PaymentFailed, PaymentSuccess, Unlocked };
 
-const char * to_string(LEDController::eStatus e) {
-    switch (e) {
-    case LEDController::eStatus::RedCross:
-        return "RedCross";
-    case LEDController::eStatus::FlashRedCross:
-        return "FlashRedCross";
-    case LEDController::eStatus::GreenArrow:
-        return "GreenArrow";
-    case LEDController::eStatus::OrangeCross:
-        return "OrangeCross";
-    }
-    return "unknown";
-}
+const char * to_string(SwingDoor::eStatus e);
+const char * to_string(LEDController::eStatus e);
+const char * to_string(eState e);
+int getFare();
+void * createTimer(std::function<void()> task, std::chrono::milliseconds duration);
+void cancelTimer(void * handle);
 
-int getFare() {
-    const auto now = std::time(nullptr);
-    const auto calTime = *std::localtime(&now);
-    const auto currentHour = calTime.tm_hour;
-    constexpr int rates[] = {3, 3, 3, 3, 3, 3, 7, 7, 7, 7, 5, 5, 5, 5, 5, 7, 7, 7, 5, 5, 5, 5, 3, 3};
-    return rates[currentHour % 24];
+template <class T>
+constexpr std::string_view type_name() {
+    using namespace std;
+#ifdef __clang__
+    string_view p = __PRETTY_FUNCTION__;
+    return string_view(p.data() + 34, p.size() - 34 - 1);
+#elif defined(__GNUC__)
+    string_view p = __PRETTY_FUNCTION__;
+#if __cplusplus < 201402
+    return string_view(p.data() + 36, p.size() - 36 - 1);
+#else
+    return string_view(p.data() + 49, p.find(';', 49) - 49);
+#endif
+#elif defined(_MSC_VER)
+    string_view p = __FUNCSIG__;
+    return string_view(p.data() + 84, p.size() - 84 - 7);
+#endif
 }
