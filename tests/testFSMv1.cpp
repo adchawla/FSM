@@ -1,4 +1,5 @@
 #include "ConditionalStream.h"
+#include "FSM.h"
 #include "Turnstile.h"
 
 #include <array>
@@ -8,16 +9,114 @@
 using namespace std::chrono_literals;
 
 namespace {
-    class BaseState;
+    using Events = std::variant<CardPresented, TransactionDeclined, TransactionSuccess, PersonPassed, Timeout>;
+    class LockedState;
+    class PaymentProcessingState;
+    class PaymentFailed;
+    class PaymentSuccess;
+    class Unlocked;
+    using States = std::variant<LockedState, PaymentProcessingState, PaymentFailed, PaymentSuccess, Unlocked>;
+    using StateOpt = std::optional<States>;
 
-    class FSMWithStatePattern {
+    class FSMv1;
+
+    class IgnoreAllEvents {
     public:
-        FSMWithStatePattern();
+        template <typename EventType>
+        StateOpt process(EventType);
+    };
+
+    class LockedState : public IgnoreAllEvents {
+    public:
+        explicit LockedState(std::reference_wrapper<FSMv1> context);
+        using IgnoreAllEvents::process;
+        StateOpt process(CardPresented event);
+
+    private:
+        std::reference_wrapper<FSMv1> _context;
+    };
+
+    class PaymentProcessingState : public IgnoreAllEvents {
+    public:
+        explicit PaymentProcessingState(std::reference_wrapper<FSMv1> context, std::string cardNumber);
+
+        using IgnoreAllEvents::process;
+        StateOpt process(TransactionDeclined event);
+        StateOpt process(TransactionSuccess event);
+        StateOpt process(Timeout event);
+
+    private:
+        std::reference_wrapper<FSMv1> _context;
+        size_t _retryCount{0};
+        std::string _cardNumber;
+        TimeoutManager _timeoutManager;
+        static std::array<std::string, 3> _gateways;
+    };
+
+    class PaymentFailed : public IgnoreAllEvents {
+    public:
+        PaymentFailed(std::reference_wrapper<FSMv1> context, std::string reason);
+
+        using IgnoreAllEvents::process;
+        StateOpt process(Timeout event);
+
+    private:
+        std::reference_wrapper<FSMv1> _context;
+        std::string _reason;
+        TimeoutManager _timeoutManager;
+    };
+
+    class PaymentSuccess : public IgnoreAllEvents {
+    public:
+        PaymentSuccess(std::reference_wrapper<FSMv1> context, int fare, int balance);
+
+        using IgnoreAllEvents::process;
+        StateOpt process(PersonPassed event);
+        StateOpt process(Timeout event);
+
+    private:
+        std::reference_wrapper<FSMv1> _context;
+        TimeoutManager _timeoutManager;
+    };
+
+    class Unlocked : public IgnoreAllEvents {
+    public:
+        explicit Unlocked(std::reference_wrapper<FSMv1> context);
+
+        using IgnoreAllEvents::process;
+        StateOpt process(PersonPassed event);
+
+    private:
+        std::reference_wrapper<FSMv1> _context;
+    };
+
+    class FSMv1 {
+    public:
+        FSMv1() : _fsm{LockedState{std::ref(*this)}} {
+        }
 
         template <typename Event>
-        FSMWithStatePattern & process(Event && event);
+        FSMv1 & process(Event event) {
+            _fsm.process(std::move(event));
+            return *this;
+        }
 
-        eState getState() const;
+        eState getState() const {
+            switch (_fsm.getStateIndex()) {
+            case 0:
+                return eState::Locked;
+            case 1:
+                return eState::PaymentProcessing;
+            case 2:
+                return eState::PaymentFailed;
+            case 3:
+                return eState::PaymentSuccess;
+            case 4:
+                return eState::Unlocked;
+            default:
+                throw std::runtime_error("Unknown state");
+            }
+        }
 
         [[nodiscard]] SwingDoor & getDoor() {
             return _door;
@@ -39,8 +138,7 @@ namespace {
         SwingDoor _door;
         POSTerminal _pos{""};
         LEDController _led;
-
-        std::unique_ptr<BaseState> _state;
+        adc::v1::FSM<LockedState, PaymentProcessingState, PaymentFailed, PaymentSuccess, Unlocked> _fsm;
 
         // for testing
         std::tuple<std::string, std::string, int> _lastTransaction;
@@ -52,149 +150,30 @@ namespace {
         }
     };
 
-    class BaseState {
-    public:
-        explicit BaseState(std::reference_wrapper<FSMWithStatePattern> context) : _context(context) {
-        }
-        virtual ~BaseState() = default;
-
-        BaseState(const BaseState & other) = delete;
-        BaseState(BaseState && other) noexcept = delete;
-        BaseState & operator=(const BaseState & other) = delete;
-        BaseState & operator=(BaseState && other) noexcept = delete;
-
-        virtual eState state() = 0;
-
-        // event handlers
-        virtual std::unique_ptr<BaseState> process(CardPresented event) {
-            return nullptr;
-        }
-        virtual std::unique_ptr<BaseState> process(TransactionDeclined event) {
-            return nullptr;
-        }
-        virtual std::unique_ptr<BaseState> process(TransactionSuccess event) {
-            return nullptr;
-        }
-        virtual std::unique_ptr<BaseState> process(PersonPassed event) {
-            return nullptr;
-        }
-        virtual std::unique_ptr<BaseState> process(Timeout event) {
-            return nullptr;
-        }
-
-    protected:
-        std::reference_wrapper<FSMWithStatePattern> _context;
-    };
-
-    class LockedState final : public BaseState {
-    public:
-        explicit LockedState(std::reference_wrapper<FSMWithStatePattern> context);
-
-        eState state() override {
-            return eState::Locked;
-        }
-        std::unique_ptr<BaseState> process(CardPresented event) override;
-    };
-
-    class PaymentProcessingState final : public BaseState {
-    public:
-        explicit PaymentProcessingState(std::reference_wrapper<FSMWithStatePattern> context, std::string cardNumber);
-
-        eState state() override {
-            return eState::PaymentProcessing;
-        }
-        std::unique_ptr<BaseState> process(TransactionDeclined event) override;
-        std::unique_ptr<BaseState> process(TransactionSuccess event) override;
-        std::unique_ptr<BaseState> process(Timeout event) override;
-
-    private:
-        size_t _retryCount{0};
-        std::string _cardNumber;
-        TimeoutManager _timeoutManager;
-        static std::array<std::string, 3> _gateways;
-    };
-
-    class PaymentFailed final : public BaseState {
-    public:
-        PaymentFailed(std::reference_wrapper<FSMWithStatePattern> context, std::string reason);
-
-        eState state() override {
-            return eState::PaymentFailed;
-        }
-
-        std::unique_ptr<BaseState> process(Timeout event) override;
-
-    private:
-        std::string _reason;
-        TimeoutManager _timeoutManager;
-    };
-
-    class PaymentSuccess final : public BaseState {
-    public:
-        PaymentSuccess(std::reference_wrapper<FSMWithStatePattern> context, int fare, int balance);
-
-        eState state() override {
-            return eState::PaymentSuccess;
-        }
-        std::unique_ptr<BaseState> process(PersonPassed event) override;
-        std::unique_ptr<BaseState> process(Timeout event) override;
-
-    private:
-        TimeoutManager _timeoutManager;
-    };
-
-    class Unlocked final : public BaseState {
-    public:
-        explicit Unlocked(std::reference_wrapper<FSMWithStatePattern> context);
-
-        eState state() override {
-            return eState::Unlocked;
-        }
-        std::unique_ptr<BaseState> process(PersonPassed event) override;
-    };
-
-    template <typename Event>
-    FSMWithStatePattern & FSMWithStatePattern::process(Event && event) {
-        LOGGER << "EVENT: " << type_name<std::decay_t<Event>>() << "\n";
-        if (auto newState = _state->process(std::forward<Event>(event))) {
-            _state = std::move(newState);
-        }
-        return *this;
-    }
-
-    FSMWithStatePattern::FSMWithStatePattern() : _state(std::make_unique<LockedState>(std::ref(*this))) {
-    }
-
-    eState FSMWithStatePattern::getState() const {
-        return _state->state();
-    }
-
-    void
-    FSMWithStatePattern::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
+    void FSMv1::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
         LOGGER << "ACTIONS: Initiated Transaction to [" << gateway << "] with card [" << cardNum << "] for amount ["
                << amount << "]\n";
         _lastTransaction = std::make_tuple(gateway, cardNum, amount);
     }
 
-    void FSMWithStatePattern::dump() const {
-        LOGGER << "STATE: " << to_string(_state->state()) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
+    void FSMv1::dump() const {
+        LOGGER << "STATE: " << to_string(getState()) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
                << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
     }
 
-    LockedState::LockedState(std::reference_wrapper<FSMWithStatePattern> context) : BaseState(context) {
+    LockedState::LockedState(std::reference_wrapper<FSMv1> context) : _context(context) {
         auto & fsm = _context.get();
         fsm.getDoor().close();
         fsm.getLED().setStatus(LEDController::eStatus::RedCross);
         fsm.getPOS().setRows("Touch Card");
     }
 
-    std::unique_ptr<BaseState> LockedState::process(CardPresented event) {
-        return std::make_unique<PaymentProcessingState>(_context, std::move(event.cardNumber));
+    StateOpt LockedState::process(CardPresented event) {
+        return PaymentProcessingState(_context, std::move(event.cardNumber));
     }
 
-    PaymentProcessingState::PaymentProcessingState(
-        std::reference_wrapper<FSMWithStatePattern> context, std::string cardNumber)
-        : BaseState(context)
+    PaymentProcessingState::PaymentProcessingState(std::reference_wrapper<FSMv1> context, std::string cardNumber)
+        : _context(context)
         , _cardNumber(std::move(cardNumber))
         , _timeoutManager(
               [&] {
@@ -210,26 +189,26 @@ namespace {
 
     std::array<std::string, 3> PaymentProcessingState::_gateways{"Gateway1", "Gateway2", "Gateway3"};
 
-    std::unique_ptr<BaseState> PaymentProcessingState::process(TransactionDeclined event) {
-        return std::make_unique<PaymentFailed>(_context, std::move(event.reason));
+    StateOpt PaymentProcessingState::process(TransactionDeclined event) {
+        return PaymentFailed(_context, std::move(event.reason));
     }
 
-    std::unique_ptr<BaseState> PaymentProcessingState::process(TransactionSuccess event) {
-        return std::make_unique<PaymentSuccess>(_context, event.fare, event.balance);
+    StateOpt PaymentProcessingState::process(TransactionSuccess event) {
+        return PaymentSuccess(_context, event.fare, event.balance);
     }
 
-    std::unique_ptr<BaseState> PaymentProcessingState::process(Timeout event) {
+    StateOpt PaymentProcessingState::process(Timeout event) {
         _retryCount++;
         if (_retryCount >= _gateways.size()) {
-            return std::make_unique<PaymentFailed>(_context, "Network Failure");
+            return PaymentFailed(_context, "Network Failure");
         }
         _context.get().initiateTransaction(_gateways[_retryCount], _cardNumber, getFare());
         _timeoutManager.restart(2s);
-        return nullptr;
+        return StateOpt{};
     }
 
-    PaymentFailed::PaymentFailed(std::reference_wrapper<FSMWithStatePattern> context, std::string reason)
-        : BaseState(context)
+    PaymentFailed::PaymentFailed(std::reference_wrapper<FSMv1> context, std::string reason)
+        : _context(context)
         , _reason(std::move(reason))
         , _timeoutManager(
               [&] {
@@ -242,12 +221,12 @@ namespace {
         fsm.getPOS().setRows("Declined", _reason);
     }
 
-    std::unique_ptr<BaseState> PaymentFailed::process(Timeout event) {
-        return std::make_unique<LockedState>(_context);
+    StateOpt PaymentFailed::process(Timeout event) {
+        return LockedState(_context);
     }
 
-    PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSMWithStatePattern> context, int fare, int balance)
-        : BaseState(context)
+    PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSMv1> context, int fare, int balance)
+        : _context(context)
         , _timeoutManager(
               [&] {
                   process(Timeout{});
@@ -261,28 +240,33 @@ namespace {
             std::string("Balance: ") + std::to_string(balance));
     }
 
-    std::unique_ptr<BaseState> PaymentSuccess::process(PersonPassed event) {
-        return std::make_unique<LockedState>(_context);
+    StateOpt PaymentSuccess::process(PersonPassed event) {
+        return LockedState(_context);
     }
 
-    std::unique_ptr<BaseState> PaymentSuccess::process(Timeout event) {
-        return std::make_unique<Unlocked>(_context);
+    StateOpt PaymentSuccess::process(Timeout event) {
+        return Unlocked(_context);
     }
 
-    Unlocked::Unlocked(std::reference_wrapper<FSMWithStatePattern> context) : BaseState(context) {
+    Unlocked::Unlocked(std::reference_wrapper<FSMv1> context) : _context(context) {
         auto & fsm = _context.get();
         fsm.getDoor().open();
         fsm.getLED().setStatus(LEDController::eStatus::GreenArrow);
         fsm.getPOS().setRows("Approved");
     }
 
-    std::unique_ptr<BaseState> Unlocked::process(PersonPassed event) {
-        return std::make_unique<LockedState>(_context);
+    StateOpt Unlocked::process(PersonPassed event) {
+        return LockedState(_context);
+    }
+
+    template <typename EventType>
+    StateOpt IgnoreAllEvents::process(EventType) {
+        return StateOpt{};
     }
 } // namespace
 
-TEST(FSMWithStatePattern, TestInitialState) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestInitialState) {
+    FSMv1 fsm;
     fsm.dump();
 
     // state transition
@@ -296,8 +280,8 @@ TEST(FSMWithStatePattern, TestInitialState) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestPaymentProcessing) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestPaymentProcessing) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"});
     fsm.dump();
 
@@ -315,8 +299,8 @@ TEST(FSMWithStatePattern, TestPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestPaymentFailed) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestPaymentFailed) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"});
     fsm.dump();
 
@@ -334,8 +318,8 @@ TEST(FSMWithStatePattern, TestPaymentFailed) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestTimeoutOnPaymentProcessing) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{});
     fsm.dump();
 
@@ -353,8 +337,8 @@ TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway2", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestLockedFromPaymentFailed) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"}).process(Timeout{});
     fsm.dump();
 
@@ -369,8 +353,8 @@ TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestPaymentSuccessful) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestPaymentSuccessful) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25});
     fsm.dump();
 
@@ -385,8 +369,8 @@ TEST(FSMWithStatePattern, TestPaymentSuccessful) {
     EXPECT_EQ("Balance: 25", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestUnlocked) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestUnlocked) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25}).process(Timeout{});
     fsm.dump();
 
@@ -401,8 +385,8 @@ TEST(FSMWithStatePattern, TestUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestLockedFromUnlocked) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(Timeout{}).process(PersonPassed{});
     fsm.dump();
 
@@ -417,8 +401,8 @@ TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestLockedFromPaymentSuccessful) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestLockedFromPaymentSuccessful) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(PersonPassed{});
     fsm.dump();
 
@@ -433,8 +417,8 @@ TEST(FSMWithStatePattern, TestLockedFromPaymentSuccessful) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestBug) {
-    FSMWithStatePattern fsm;
+TEST(FSMv1, TestBug) {
+    FSMv1 fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{}).process(Timeout{}).process(Timeout{}).process(Timeout{});
     EXPECT_EQ(eState::Locked, fsm.getState());
     fsm.process(CardPresented{"A"}).process(Timeout{});

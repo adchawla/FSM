@@ -123,3 +123,38 @@ constexpr std::string_view type_name() {
     return string_view(p.data() + 84, p.size() - 84 - 7);
 #endif
 }
+
+class TimeoutManager {
+public:
+    TimeoutManager(std::function<void()> fn, std::chrono::milliseconds duration)
+        : _fn(std::move(fn))
+        , _timeoutHandler(createTimer(
+              [&] {
+                  _timeoutHandler = nullptr;
+                  _fn();
+              },
+              duration)) {
+    }
+
+    void restart(std::chrono::milliseconds duration) {
+        if (_timeoutHandler) {
+            cancelTimer(_timeoutHandler);
+        }
+        _timeoutHandler = createTimer(
+            [&] {
+                _timeoutHandler = nullptr;
+                _fn();
+            },
+            duration);
+    }
+
+    ~TimeoutManager() {
+        if (_timeoutHandler) {
+            cancelTimer(_timeoutHandler);
+        }
+    }
+
+private:
+    std::function<void()> _fn;
+    void * _timeoutHandler{nullptr};
+};
