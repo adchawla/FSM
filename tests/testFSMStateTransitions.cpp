@@ -1,4 +1,5 @@
 #include "ConditionalStream.h"
+#include "FSM.h"
 #include "Turnstile.h"
 
 #include <array>
@@ -8,33 +9,6 @@
 using namespace std::chrono_literals;
 
 namespace {
-    template <typename... States>
-    class FSM {
-    public:
-        template <typename InitialState>
-        explicit FSM(InitialState && state) : _state{std::forward<InitialState>(state)} {
-        }
-
-        template <typename Event>
-        void process(Event event) {
-            auto optResult = std::visit(
-                [&](auto & state) {
-                    return state.process(std::move(event));
-                },
-                _state);
-            if (optResult) {
-                _state = std::move(optResult.value());
-            }
-        }
-
-        auto getStateIndex() const {
-            return _state.index();
-        }
-
-    private:
-        std::variant<States...> _state;
-    };
-
     using Events = std::variant<CardPresented, TransactionDeclined, TransactionSuccess, PersonPassed, Timeout>;
     class LockedState;
     class PaymentProcessingState;
@@ -44,29 +18,29 @@ namespace {
     using State = std::variant<LockedState, PaymentProcessingState, PaymentFailed, PaymentSuccess, Unlocked>;
     using OptState = std::optional<State>;
 
-    class FSMv1;
+    class FSMv3;
 
     class BaseState {
     public:
-        explicit BaseState(std::reference_wrapper<FSMv1> context) : _context(context) {
+        explicit BaseState(std::reference_wrapper<FSMv3> context) : _context(context) {
         }
         template <typename EventType>
         OptState process(EventType);
 
     protected:
-        std::reference_wrapper<FSMv1> _context;
+        std::reference_wrapper<FSMv3> _context;
     };
 
     class LockedState : public BaseState {
     public:
-        explicit LockedState(std::reference_wrapper<FSMv1> context);
+        explicit LockedState(std::reference_wrapper<FSMv3> context);
         using BaseState::process;
         OptState process(CardPresented event);
     };
 
     class PaymentProcessingState : public BaseState {
     public:
-        explicit PaymentProcessingState(std::reference_wrapper<FSMv1> context, std::string cardNumber);
+        explicit PaymentProcessingState(std::reference_wrapper<FSMv3> context, std::string cardNumber);
 
         using BaseState::process;
         OptState process(TransactionDeclined event);
@@ -82,7 +56,7 @@ namespace {
 
     class PaymentFailed : public BaseState {
     public:
-        PaymentFailed(std::reference_wrapper<FSMv1> context, std::string reason);
+        PaymentFailed(std::reference_wrapper<FSMv3> context, std::string reason);
 
         using BaseState::process;
         OptState process(Timeout event);
@@ -94,7 +68,7 @@ namespace {
 
     class PaymentSuccess : public BaseState {
     public:
-        PaymentSuccess(std::reference_wrapper<FSMv1> context, int fare, int balance);
+        PaymentSuccess(std::reference_wrapper<FSMv3> context, int fare, int balance);
 
         using BaseState::process;
         OptState process(PersonPassed event);
@@ -106,19 +80,19 @@ namespace {
 
     class Unlocked : public BaseState {
     public:
-        explicit Unlocked(std::reference_wrapper<FSMv1> context);
+        explicit Unlocked(std::reference_wrapper<FSMv3> context);
 
         using BaseState::process;
         OptState process(PersonPassed event);
     };
 
-    class FSMv1 {
+    class FSMv3 {
     public:
-        FSMv1() : _fsm{LockedState{std::ref(*this)}} {
+        FSMv3() : _fsm{LockedState{std::ref(*this)}} {
         }
 
         template <typename Event>
-        FSMv1 & process(Event event) {
+        FSMv3 & process(Event event) {
             _fsm.process(std::move(event));
             return *this;
         }
@@ -160,7 +134,7 @@ namespace {
         SwingDoor _door;
         POSTerminal _pos{""};
         LEDController _led;
-        FSM<LockedState, PaymentProcessingState, PaymentFailed, PaymentSuccess, Unlocked> _fsm;
+        adc::FSMStateTransitions<LockedState, PaymentProcessingState, PaymentFailed, PaymentSuccess, Unlocked> _fsm;
 
         // for testing
         std::tuple<std::string, std::string, int> _lastTransaction;
@@ -172,18 +146,18 @@ namespace {
         }
     };
 
-    void FSMv1::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
+    void FSMv3::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
         LOGGER << "ACTIONS: Initiated Transaction to [" << gateway << "] with card [" << cardNum << "] for amount ["
                << amount << "]\n";
         _lastTransaction = std::make_tuple(gateway, cardNum, amount);
     }
 
-    void FSMv1::dump() const {
+    void FSMv3::dump() const {
         LOGGER << "STATE: " << to_string(getState()) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
                << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
     }
 
-    LockedState::LockedState(std::reference_wrapper<FSMv1> context) : BaseState(context) {
+    LockedState::LockedState(std::reference_wrapper<FSMv3> context) : BaseState(context) {
         auto & fsm = _context.get();
         fsm.getDoor().close();
         fsm.getLED().setStatus(LEDController::eStatus::RedCross);
@@ -194,7 +168,7 @@ namespace {
         return PaymentProcessingState(_context, std::move(event.cardNumber));
     }
 
-    PaymentProcessingState::PaymentProcessingState(std::reference_wrapper<FSMv1> context, std::string cardNumber)
+    PaymentProcessingState::PaymentProcessingState(std::reference_wrapper<FSMv3> context, std::string cardNumber)
         : BaseState(context)
         , _cardNumber(std::move(cardNumber))
         , _timeoutManager(
@@ -229,7 +203,7 @@ namespace {
         return OptState{};
     }
 
-    PaymentFailed::PaymentFailed(std::reference_wrapper<FSMv1> context, std::string reason)
+    PaymentFailed::PaymentFailed(std::reference_wrapper<FSMv3> context, std::string reason)
         : BaseState(context)
         , _reason(std::move(reason))
         , _timeoutManager(
@@ -247,7 +221,7 @@ namespace {
         return LockedState(_context);
     }
 
-    PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSMv1> context, int fare, int balance)
+    PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSMv3> context, int fare, int balance)
         : BaseState(context)
         , _timeoutManager(
               [&] {
@@ -270,7 +244,7 @@ namespace {
         return Unlocked(_context);
     }
 
-    Unlocked::Unlocked(std::reference_wrapper<FSMv1> context) : BaseState(context) {
+    Unlocked::Unlocked(std::reference_wrapper<FSMv3> context) : BaseState(context) {
         auto & fsm = _context.get();
         fsm.getDoor().open();
         fsm.getLED().setStatus(LEDController::eStatus::GreenArrow);
@@ -287,8 +261,8 @@ namespace {
     }
 } // namespace
 
-TEST(FSMv1, TestInitialState) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestInitialState) {
+    FSMv3 fsm;
     fsm.dump();
 
     // state transition
@@ -302,8 +276,8 @@ TEST(FSMv1, TestInitialState) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestPaymentProcessing) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestPaymentProcessing) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"});
     fsm.dump();
 
@@ -321,8 +295,8 @@ TEST(FSMv1, TestPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMv1, TestPaymentFailed) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestPaymentFailed) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"});
     fsm.dump();
 
@@ -340,8 +314,8 @@ TEST(FSMv1, TestPaymentFailed) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMv1, TestTimeoutOnPaymentProcessing) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestTimeoutOnPaymentProcessing) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{});
     fsm.dump();
 
@@ -359,8 +333,8 @@ TEST(FSMv1, TestTimeoutOnPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway2", "A", getFare()));
 }
 
-TEST(FSMv1, TestLockedFromPaymentFailed) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestLockedFromPaymentFailed) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"}).process(Timeout{});
     fsm.dump();
 
@@ -375,8 +349,8 @@ TEST(FSMv1, TestLockedFromPaymentFailed) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestPaymentSuccessful) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestPaymentSuccessful) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25});
     fsm.dump();
 
@@ -391,8 +365,8 @@ TEST(FSMv1, TestPaymentSuccessful) {
     EXPECT_EQ("Balance: 25", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestUnlocked) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestUnlocked) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25}).process(Timeout{});
     fsm.dump();
 
@@ -407,8 +381,8 @@ TEST(FSMv1, TestUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestLockedFromUnlocked) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestLockedFromUnlocked) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(Timeout{}).process(PersonPassed{});
     fsm.dump();
 
@@ -423,8 +397,8 @@ TEST(FSMv1, TestLockedFromUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestLockedFromPaymentSuccessful) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestLockedFromPaymentSuccessful) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(PersonPassed{});
     fsm.dump();
 
@@ -439,8 +413,8 @@ TEST(FSMv1, TestLockedFromPaymentSuccessful) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMv1, TestBug) {
-    FSMv1 fsm;
+TEST(FSMStateTransitions, TestBug) {
+    FSMv3 fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{}).process(Timeout{}).process(Timeout{}).process(Timeout{});
     EXPECT_EQ(eState::Locked, fsm.getState());
     fsm.process(CardPresented{"A"}).process(Timeout{});

@@ -5,7 +5,10 @@ enable_testing()
 add_executable(unitTests
     ConditionalStream.cpp
     ConditionalStream.h
+    testFSMExternalTransitions.cpp
+    testFSMStateTransitions.cpp
     testFSMv1.cpp
+    testFSMv2.cpp
     testFSMWithEnums.cpp
     testFSMWithStatePattern.cpp
     Turnstile.cpp

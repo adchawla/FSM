@@ -2,7 +2,7 @@
 
 #include <ostream>
 
-#define ENABLE_LOGGING 1
+#define ENABLE_LOGGING 0
 
 #if !ENABLE_LOGGING
 namespace {
