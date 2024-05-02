@@ -20,4 +20,5 @@ target_include_directories(
 if(PROJECT_IS_TOP_LEVEL)
     add_subdirectory(common)
     add_subdirectory(tests)
+    add_subdirectory(benchmarks)
 endif()

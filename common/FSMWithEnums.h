@@ -147,6 +147,7 @@ namespace with_enums {
     }
 
     inline void FSM::transitionToPaymentProcessing(const std::string & gateway, std::string cardNumber) {
+        _retryCounts = 0;
         _cardNumber = std::move(cardNumber);
         initiateTransaction(gateway, _cardNumber, getFare());
         _door.close();
