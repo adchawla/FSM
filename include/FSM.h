@@ -64,7 +64,7 @@ namespace adc {
 
     public:
         template <typename InitialState>
-        explicit TFSMStateTransitions(InitialState && state)  // NOLINT(bugprone-forwarding-reference-overload)
+        explicit TFSMStateTransitions(InitialState && state) // NOLINT(bugprone-forwarding-reference-overload)
             : BaseType{StrategyType{}, std::forward<InitialState>(state)} {
         }
     };

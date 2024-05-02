@@ -2,9 +2,9 @@
 
 #include "Turnstile.h"
 
+#include <array>
 #include <optional>
 #include <string>
-#include <array>
 
 namespace states {
     using namespace std::chrono_literals;
