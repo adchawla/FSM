@@ -1,5 +1,7 @@
 #include "Turnstile.h"
 
+#include <array>
+
 const std::array<std::string, 3> GATEWAYS = {"Gateway1", "Gateway2", "Gateway3"};
 
 const char * to_string(SwingDoor::eStatus e) {

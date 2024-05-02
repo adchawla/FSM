@@ -11,7 +11,10 @@ if(NOT DEFINED CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
 
-add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME} INTERFACE
+    ${CMAKE_SOURCE_DIR}/include/FSM.h
+)
+
 target_include_directories(
     ${PROJECT_NAME}
     INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -20,5 +23,7 @@ target_include_directories(
 if(PROJECT_IS_TOP_LEVEL)
     add_subdirectory(common)
     add_subdirectory(tests)
-    add_subdirectory(benchmarks)
+    if (INCLUDE_BENCHMARKS)
+        add_subdirectory(benchmarks)
+    endif()
 endif()

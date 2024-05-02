@@ -14,7 +14,7 @@ namespace with_enums {
         FSM & process(PersonPassed event);
         FSM & process(Timeout event);
 
-        eState getState() const {
+        [[nodiscard]] eState getState() const {
             return _state;
         }
 
@@ -40,23 +40,22 @@ namespace with_enums {
         std::string _cardNumber{};
 
         // for testing
-        std::array<std::string, 3> _gateways{"Gateway1", "Gateway2", "Gateway3"};
         std::tuple<std::string, std::string, int> _lastTransaction;
 
     public:
-        void dump() const;
-
-        const auto & getLastTransaction() const {
+        [[nodiscard]] const auto & getLastTransaction() const {
             return _lastTransaction;
         }
-        const SwingDoor & getDoor() const {
+
+        [[nodiscard]] const SwingDoor & getDoor() const {
             return _door;
         }
-        const POSTerminal & getPOS() const {
+
+        [[nodiscard]] const POSTerminal & getPOS() const {
             return _pos;
         }
 
-        const LEDController & getLEDController() const {
+        [[nodiscard]] const LEDController & getLED() const {
             return _led;
         }
     };
@@ -65,7 +64,7 @@ namespace with_enums {
         LOGGER << "EVENT: CardPresent\n";
         switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
         case eState::Locked:
-            transitionToPaymentProcessing(_gateways[0], std::move(event.cardNumber));
+            transitionToPaymentProcessing(GATEWAYS[0], std::move(event.cardNumber));
             break;
 
         default:
@@ -78,7 +77,7 @@ namespace with_enums {
         LOGGER << "EVENT: TransactionDeclined\n";
         switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
         case eState::PaymentProcessing:
-            transitionToPaymentFailed(std::move(event.reason));
+            transitionToPaymentFailed(event.reason);
             break;
         default:
             break;
@@ -119,7 +118,7 @@ namespace with_enums {
             if (_retryCounts > 2) {
                 transitionToPaymentFailed("Network Error");
             } else {
-                initiateTransaction(_gateways[_retryCounts], _cardNumber, getFare());
+                initiateTransaction(GATEWAYS[_retryCounts], _cardNumber, getFare());
             }
             break;
         case eState::PaymentFailed:
@@ -135,14 +134,8 @@ namespace with_enums {
         return *this;
     }
 
-    inline void FSM::dump() const {
-        LOGGER << "STATE: " << to_string(_state) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
-               << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
-    }
-
     inline void FSM::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
-        LOGGER << "ACTIONS: Initiated Transaction to [" << gateway << "] with card [" << cardNum << "] for amount ["
-               << amount << "]\n";
+        logTransaction(gateway, cardNum, amount);
         _lastTransaction = std::make_tuple(gateway, cardNum, amount);
     }
 
@@ -185,5 +178,4 @@ namespace with_enums {
         _pos.setRows("Approved");
         _led.setStatus(LEDController::eStatus::GreenArrow);
     }
-
 } // namespace with_enums

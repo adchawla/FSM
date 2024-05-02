@@ -6,7 +6,7 @@ using with_state_pattern::FSM;
 
 TEST(FSMWithStatePattern, TestInitialState) {
     FSM fsm;
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -22,7 +22,7 @@ TEST(FSMWithStatePattern, TestInitialState) {
 TEST(FSMWithStatePattern, TestPaymentProcessing) {
     FSM fsm;
     fsm.process(CardPresented{"A"});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentProcessing);
@@ -41,7 +41,7 @@ TEST(FSMWithStatePattern, TestPaymentProcessing) {
 TEST(FSMWithStatePattern, TestPaymentFailed) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentFailed);
@@ -60,7 +60,7 @@ TEST(FSMWithStatePattern, TestPaymentFailed) {
 TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentProcessing);
@@ -79,7 +79,7 @@ TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
 TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -95,7 +95,7 @@ TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
 TEST(FSMWithStatePattern, TestPaymentSuccessful) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::PaymentSuccess, fsm.getState());
@@ -111,7 +111,7 @@ TEST(FSMWithStatePattern, TestPaymentSuccessful) {
 TEST(FSMWithStatePattern, TestUnlocked) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Unlocked, fsm.getState());
@@ -127,7 +127,7 @@ TEST(FSMWithStatePattern, TestUnlocked) {
 TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(Timeout{}).process(PersonPassed{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -143,7 +143,7 @@ TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
 TEST(FSMWithStatePattern, TestLockedFromPaymentSuccessful) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(PersonPassed{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());

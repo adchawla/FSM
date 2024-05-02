@@ -2,7 +2,13 @@
 
 #include "Turnstile.h"
 
+#include <optional>
+#include <string>
+#include <array>
+
 namespace states {
+    using namespace std::chrono_literals;
+
     template <typename FSM>
     class TLocked;
     template <typename FSM>

@@ -6,6 +6,8 @@
 #include <array>
 
 namespace with_state_pattern {
+    using namespace std::chrono_literals;
+
     class BaseState;
 
     class FSM {
@@ -15,7 +17,7 @@ namespace with_state_pattern {
         template <typename Event>
         FSM & process(Event && event);
 
-        eState getState() const;
+        [[nodiscard]] eState getState() const;
 
         [[nodiscard]] SwingDoor & getDoor() {
             return _door;
@@ -44,8 +46,7 @@ namespace with_state_pattern {
         std::tuple<std::string, std::string, int> _lastTransaction;
 
     public:
-        void dump() const;
-        const auto & getLastTransaction() const {
+        [[nodiscard]] const auto & getLastTransaction() const {
             return _lastTransaction;
         }
     };
@@ -109,7 +110,6 @@ namespace with_state_pattern {
         size_t _retryCount{0};
         std::string _cardNumber;
         TimeoutManager _timeoutManager;
-        static std::array<std::string, 3> _gateways;
     };
 
     class PaymentFailed final : public BaseState {
@@ -160,36 +160,30 @@ namespace with_state_pattern {
         return *this;
     }
 
-    FSM::FSM() : _state(std::make_unique<Locked>(std::ref(*this))) {
+    inline FSM::FSM() : _state(std::make_unique<Locked>(std::ref(*this))) {
     }
 
-    eState FSM::getState() const {
+    inline eState FSM::getState() const {
         return _state->state();
     }
 
-    void FSM::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
-        LOGGER << "ACTIONS: Initiated Transaction to [" << gateway << "] with card [" << cardNum << "] for amount ["
-               << amount << "]\n";
+    inline void FSM::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
+        logTransaction(gateway, cardNum, amount);
         _lastTransaction = std::make_tuple(gateway, cardNum, amount);
     }
 
-    void FSM::dump() const {
-        LOGGER << "STATE: " << to_string(_state->state()) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
-               << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
-    }
-
-    Locked::Locked(std::reference_wrapper<FSM> context) : BaseState(context) {
+    inline Locked::Locked(std::reference_wrapper<FSM> context) : BaseState(context) {
         auto & fsm = _context.get();
         fsm.getDoor().close();
         fsm.getLED().setStatus(LEDController::eStatus::RedCross);
         fsm.getPOS().setRows("Touch Card");
     }
 
-    std::unique_ptr<BaseState> Locked::process(CardPresented event) {
+    inline std::unique_ptr<BaseState> Locked::process(CardPresented event) {
         return std::make_unique<PaymentProcessing>(_context, std::move(event.cardNumber));
     }
 
-    PaymentProcessing::PaymentProcessing(std::reference_wrapper<FSM> context, std::string cardNumber)
+    inline PaymentProcessing::PaymentProcessing(std::reference_wrapper<FSM> context, std::string cardNumber)
         : BaseState(context)
         , _cardNumber(std::move(cardNumber))
         , _timeoutManager(
@@ -201,30 +195,27 @@ namespace with_state_pattern {
         fsm.getDoor().close();
         fsm.getLED().setStatus(LEDController::eStatus::OrangeCross);
         fsm.getPOS().setRows("Processing");
-        fsm.initiateTransaction(_gateways[_retryCount], _cardNumber, getFare());
+        fsm.initiateTransaction(GATEWAYS[_retryCount], _cardNumber, getFare());
     }
 
-    std::array<std::string, 3> PaymentProcessing::_gateways{"Gateway1", "Gateway2", "Gateway3"};
-
-    std::unique_ptr<BaseState> PaymentProcessing::process(TransactionDeclined event) {
+    inline std::unique_ptr<BaseState> PaymentProcessing::process(TransactionDeclined event) {
         return std::make_unique<PaymentFailed>(_context, std::move(event.reason));
     }
 
-    std::unique_ptr<BaseState> PaymentProcessing::process(TransactionSuccess event) {
+    inline std::unique_ptr<BaseState> PaymentProcessing::process(TransactionSuccess event) {
         return std::make_unique<PaymentSuccess>(_context, event.fare, event.balance);
     }
 
-    std::unique_ptr<BaseState> PaymentProcessing::process(Timeout event) {
-        _retryCount++;
-        if (_retryCount >= _gateways.size()) {
+    inline std::unique_ptr<BaseState> PaymentProcessing::process(Timeout event) {
+        if (++_retryCount >= GATEWAYS.size()) {
             return std::make_unique<PaymentFailed>(_context, "Network Failure");
         }
-        _context.get().initiateTransaction(_gateways[_retryCount], _cardNumber, getFare());
+        _context.get().initiateTransaction(GATEWAYS[_retryCount], _cardNumber, getFare());
         _timeoutManager.restart(2s);
         return nullptr;
     }
 
-    PaymentFailed::PaymentFailed(std::reference_wrapper<FSM> context, std::string reason)
+    inline PaymentFailed::PaymentFailed(std::reference_wrapper<FSM> context, std::string reason)
         : BaseState(context)
         , _reason(std::move(reason))
         , _timeoutManager(
@@ -238,11 +229,11 @@ namespace with_state_pattern {
         fsm.getPOS().setRows("Declined", _reason);
     }
 
-    std::unique_ptr<BaseState> PaymentFailed::process(Timeout event) {
+    inline std::unique_ptr<BaseState> PaymentFailed::process(Timeout event) {
         return std::make_unique<Locked>(_context);
     }
 
-    PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSM> context, int fare, int balance)
+    inline PaymentSuccess::PaymentSuccess(std::reference_wrapper<FSM> context, int fare, int balance)
         : BaseState(context)
         , _timeoutManager(
               [&] {
@@ -257,22 +248,22 @@ namespace with_state_pattern {
             std::string("Balance: ") + std::to_string(balance));
     }
 
-    std::unique_ptr<BaseState> PaymentSuccess::process(PersonPassed event) {
+    inline std::unique_ptr<BaseState> PaymentSuccess::process(PersonPassed event) {
         return std::make_unique<Locked>(_context);
     }
 
-    std::unique_ptr<BaseState> PaymentSuccess::process(Timeout event) {
+    inline std::unique_ptr<BaseState> PaymentSuccess::process(Timeout event) {
         return std::make_unique<Unlocked>(_context);
     }
 
-    Unlocked::Unlocked(std::reference_wrapper<FSM> context) : BaseState(context) {
+    inline Unlocked::Unlocked(std::reference_wrapper<FSM> context) : BaseState(context) {
         auto & fsm = _context.get();
         fsm.getDoor().open();
         fsm.getLED().setStatus(LEDController::eStatus::GreenArrow);
         fsm.getPOS().setRows("Approved");
     }
 
-    std::unique_ptr<BaseState> Unlocked::process(PersonPassed event) {
+    inline std::unique_ptr<BaseState> Unlocked::process(PersonPassed event) {
         return std::make_unique<Locked>(_context);
     }
 } // namespace with_state_pattern

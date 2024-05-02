@@ -1,3 +1,5 @@
+#pragma once
+
 #include <variant>
 
 namespace adc::details {
@@ -62,7 +64,7 @@ namespace adc {
 
     public:
         template <typename InitialState>
-        explicit TFSMStateTransitions(InitialState && state)
+        explicit TFSMStateTransitions(InitialState && state)  // NOLINT(bugprone-forwarding-reference-overload)
             : BaseType{StrategyType{}, std::forward<InitialState>(state)} {
         }
     };
