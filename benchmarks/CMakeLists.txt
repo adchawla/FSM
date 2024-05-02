@@ -6,6 +6,10 @@ add_executable (benchmarks
     benchFSMStateTransitions.cpp
 )
 
+target_compile_definitions(benchmarks PUBLIC
+    DISABLE_TIMEOUT_MANAGER=1
+)
+
 include(FetchContent)
 FetchContent_Declare(
     googlebenchmark

@@ -5,7 +5,6 @@
 #include <array>
 #include <optional>
 #include <string>
-
 namespace states {
     using namespace std::chrono_literals;
 
@@ -59,7 +58,6 @@ namespace states {
         TOptState<FSM> process(CardPresented event) {
             return TPaymentProcessing<FSM>(_context, std::move(event.cardNumber));
         }
-        // std::reference_wrapper<FSM> _context;
     };
 
     template <typename FSM>
@@ -69,11 +67,14 @@ namespace states {
         explicit TPaymentProcessing(std::reference_wrapper<FSM> context, std::string cardNumber)
             : TBaseState<FSM>(context)
             , _cardNumber(std::move(cardNumber))
+#if !DISABLE_TIMEOUT_MANAGER
             , _timeoutManager(
                   [&] {
                       _context.get().process(Timeout{});
                   },
-                  2s) {
+                  2s)
+#endif
+        {
             auto & fsm = _context.get();
             fsm.getDoor().close();
             fsm.getLED().setStatus(LEDController::eStatus::OrangeCross);
@@ -90,7 +91,9 @@ namespace states {
                 return false;
             }
             _context.get().initiateTransaction(GATEWAYS[_retryCount], _cardNumber, getFare());
+#if !DISABLE_TIMEOUT_MANAGER
             _timeoutManager.restart(2s);
+#endif
             return true;
         }
 
@@ -110,7 +113,9 @@ namespace states {
     private:
         size_t _retryCount{0};
         std::string _cardNumber;
+#if !DISABLE_TIMEOUT_MANAGER
         TimeoutManager _timeoutManager;
+#endif
     };
 
     template <typename FSM>
@@ -120,11 +125,14 @@ namespace states {
         TPaymentFailed(std::reference_wrapper<FSM> context, std::string reason)
             : TBaseState<FSM>(context)
             , _reason(std::move(reason))
+#if !DISABLE_TIMEOUT_MANAGER
             , _timeoutManager(
                   [&] {
                       _context.get().process(Timeout{});
                   },
-                  2s) {
+                  2s)
+#endif
+        {
             auto & fsm = _context.get();
             fsm.getDoor().close();
             fsm.getLED().setStatus(LEDController::eStatus::FlashRedCross);
@@ -142,7 +150,9 @@ namespace states {
 
     private:
         std::string _reason;
+#if !DISABLE_TIMEOUT_MANAGER
         TimeoutManager _timeoutManager;
+#endif
     };
 
     template <typename FSM>
@@ -151,11 +161,14 @@ namespace states {
         using TBaseState<FSM>::_context;
         TPaymentSuccess(std::reference_wrapper<FSM> context, int fare, int balance)
             : TBaseState<FSM>(context)
+#if !DISABLE_TIMEOUT_MANAGER
             , _timeoutManager(
                   [&] {
                       _context.get().process(Timeout{});
                   },
-                  2s) {
+                  2s)
+#endif
+        {
             auto & fsm = _context.get();
             fsm.getDoor().open();
             fsm.getLED().setStatus(LEDController::eStatus::GreenArrow);
@@ -178,7 +191,9 @@ namespace states {
         }
 
     private:
+#if !DISABLE_TIMEOUT_MANAGER
         TimeoutManager _timeoutManager;
+#endif
     };
 
     template <typename FSM>
