@@ -1,189 +1,11 @@
-#include "ConditionalStream.h"
-#include "Turnstile.h"
+#include "FSMWithEnums.h"
 
-#include <array>
 #include <gtest/gtest.h>
 
-class FSMWithEnums {
-public:
-    FSMWithEnums & process(CardPresented event);
-    FSMWithEnums & process(TransactionDeclined event);
-    FSMWithEnums & process(TransactionSuccess event);
-    FSMWithEnums & process(PersonPassed event);
-    FSMWithEnums & process(Timeout event);
-
-    eState getState() const {
-        return _state;
-    }
-
-private:
-    // External Actions
-    void initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount);
-
-    // helper functions
-    void transitionToPaymentProcessing(const std::string & gateway, std::string cardNumber);
-    void transitionToPaymentFailed(const std::string & reason);
-    void transitionToLocked();
-    void transitionToPaymentSuccessful(int fare, int balance);
-    void transitionToUnlocked();
-
-    eState _state{eState::Locked};
-
-    // Connected Devices
-    SwingDoor _door;
-    POSTerminal _pos{"Touch Card"};
-    LEDController _led;
-
-    int _retryCounts{0};
-    std::string _cardNumber{};
-
-    // for testing
-    std::array<std::string, 3> _gateways{"Gateway1", "Gateway2", "Gateway3"};
-    std::tuple<std::string, std::string, int> _lastTransaction;
-
-public:
-    void dump() const;
-
-    const auto & getLastTransaction() const {
-        return _lastTransaction;
-    }
-    const SwingDoor & getDoor() const {
-        return _door;
-    }
-    const POSTerminal & getPOS() const {
-        return _pos;
-    }
-
-    const LEDController & getLEDController() const {
-        return _led;
-    }
-};
-
-FSMWithEnums & FSMWithEnums::process(CardPresented event) {
-    LOGGER << "EVENT: CardPresent\n";
-    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
-    case eState::Locked:
-        transitionToPaymentProcessing(_gateways[0], std::move(event.cardNumber));
-        break;
-
-    default:
-        break;
-    }
-    return *this;
-}
-
-FSMWithEnums & FSMWithEnums::process(TransactionDeclined event) {
-    LOGGER << "EVENT: TransactionDeclined\n";
-    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
-    case eState::PaymentProcessing:
-        transitionToPaymentFailed(std::move(event.reason));
-        break;
-    default:
-        break;
-    }
-    return *this;
-}
-
-FSMWithEnums & FSMWithEnums::process(TransactionSuccess event) {
-    LOGGER << "EVENT: TransactionSuccess\n";
-    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
-    case eState::PaymentProcessing:
-        transitionToPaymentSuccessful(event.fare, event.balance);
-        break;
-    default:
-        break;
-    }
-    return *this;
-}
-
-FSMWithEnums & FSMWithEnums::process(PersonPassed event) {
-    LOGGER << "EVENT: PersonPassed\n";
-    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
-    case eState::PaymentSuccess:
-    case eState::Unlocked:
-        transitionToLocked();
-        break;
-    default:
-        break;
-    }
-    return *this;
-}
-
-FSMWithEnums & FSMWithEnums::process(Timeout event) {
-    LOGGER << "EVENT: Timeout\n";
-    switch (_state) { // NOLINT(clang-diagnostic-switch-enum)
-    case eState::PaymentProcessing:
-        _retryCounts++;
-        if (_retryCounts > 2) {
-            transitionToPaymentFailed("Network Error");
-        } else {
-            initiateTransaction(_gateways[_retryCounts], _cardNumber, getFare());
-        }
-        break;
-    case eState::PaymentFailed:
-        transitionToLocked();
-        break;
-
-    case eState::PaymentSuccess:
-        transitionToUnlocked();
-        break;
-    default:
-        break;
-    }
-    return *this;
-}
-
-void FSMWithEnums::dump() const {
-    LOGGER << "STATE: " << to_string(_state) << " :: Door[" << to_string(_door.getStatus()) << "], LED: ["
-           << to_string(_led.getStatus()) << "] and PosTerminal[" << _pos.getRows() << "]\n";
-}
-
-void FSMWithEnums::initiateTransaction(const std::string & gateway, const std::string & cardNum, int amount) {
-    LOGGER << "ACTIONS: Initiated Transaction to [" << gateway << "] with card [" << cardNum << "] for amount ["
-           << amount << "]\n";
-    _lastTransaction = std::make_tuple(gateway, cardNum, amount);
-}
-
-void FSMWithEnums::transitionToPaymentProcessing(const std::string & gateway, std::string cardNumber) {
-    _cardNumber = std::move(cardNumber);
-    initiateTransaction(gateway, _cardNumber, getFare());
-    _door.close();
-    _pos.setRows("Processing");
-    _led.setStatus(LEDController::eStatus::OrangeCross);
-    _state = eState::PaymentProcessing;
-}
-
-void FSMWithEnums::transitionToPaymentFailed(const std::string & reason) {
-    _door.close();
-    _pos.setRows("Declined", reason);
-    _led.setStatus(LEDController::eStatus::FlashRedCross);
-    _state = eState::PaymentFailed;
-}
-
-void FSMWithEnums::transitionToLocked() {
-    _state = eState::Locked;
-    _door.close();
-    _pos.setRows("Touch Card");
-    _led.setStatus(LEDController::eStatus::RedCross);
-}
-
-void FSMWithEnums::transitionToPaymentSuccessful(int fare, int balance) {
-    _state = eState::PaymentSuccess;
-    _door.open();
-    _pos.setRows(
-        "Approved", std::string("Fare: ") + std::to_string(fare), std::string("Balance: ") + std::to_string(balance));
-    _led.setStatus(LEDController::eStatus::GreenArrow);
-}
-
-void FSMWithEnums::transitionToUnlocked() {
-    _state = eState::Unlocked;
-    _door.open();
-    _pos.setRows("Approved");
-    _led.setStatus(LEDController::eStatus::GreenArrow);
-}
+using with_enums::FSM;
 
 TEST(FSMWithEnums, TestInitialState) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.dump();
 
     // state transition
@@ -198,7 +20,7 @@ TEST(FSMWithEnums, TestInitialState) {
 }
 
 TEST(FSMWithEnums, TestPaymentProcessing) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"});
     fsm.dump();
 
@@ -217,7 +39,7 @@ TEST(FSMWithEnums, TestPaymentProcessing) {
 }
 
 TEST(FSMWithEnums, TestPaymentFailed) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"});
     fsm.dump();
 
@@ -236,7 +58,7 @@ TEST(FSMWithEnums, TestPaymentFailed) {
 }
 
 TEST(FSMWithEnums, TestTimeoutOnPaymentProcessing) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{});
     fsm.dump();
 
@@ -255,7 +77,7 @@ TEST(FSMWithEnums, TestTimeoutOnPaymentProcessing) {
 }
 
 TEST(FSMWithEnums, TestLockedFromPaymentFailed) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"}).process(Timeout{});
     fsm.dump();
 
@@ -271,7 +93,7 @@ TEST(FSMWithEnums, TestLockedFromPaymentFailed) {
 }
 
 TEST(FSMWithEnums, TestPaymentSuccessful) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25});
     fsm.dump();
 
@@ -287,7 +109,7 @@ TEST(FSMWithEnums, TestPaymentSuccessful) {
 }
 
 TEST(FSMWithEnums, TestUnlocked) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25}).process(Timeout{});
     fsm.dump();
 
@@ -303,7 +125,7 @@ TEST(FSMWithEnums, TestUnlocked) {
 }
 
 TEST(FSMWithEnums, TestLockedFromUnlocked) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(Timeout{}).process(PersonPassed{});
     fsm.dump();
 
@@ -319,7 +141,7 @@ TEST(FSMWithEnums, TestLockedFromUnlocked) {
 }
 
 TEST(FSMWithEnums, TestLockedFromPaymentSuccessful) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(PersonPassed{});
     fsm.dump();
 
@@ -335,7 +157,7 @@ TEST(FSMWithEnums, TestLockedFromPaymentSuccessful) {
 }
 
 TEST(FSMWithEnums, TestBug) {
-    FSMWithEnums fsm;
+    FSM fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{}).process(Timeout{}).process(Timeout{}).process(Timeout{});
     EXPECT_EQ(eState::Locked, fsm.getState());
     fsm.process(CardPresented{"A"}).process(Timeout{});

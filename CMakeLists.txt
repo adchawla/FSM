@@ -18,5 +18,6 @@ target_include_directories(
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 if(PROJECT_IS_TOP_LEVEL)
+    add_subdirectory(common)
     add_subdirectory(tests)
 endif()

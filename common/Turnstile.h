@@ -5,6 +5,9 @@
 #include <sstream>
 #include <string>
 
+using namespace std::chrono_literals;
+extern const std::array<std::string, 3> GATEWAYS;
+
 // connected devices
 class SwingDoor {
 public:

@@ -3,16 +3,12 @@ cmake_minimum_required(VERSION 3.23)
 enable_testing()
 
 add_executable(unitTests
-    ConditionalStream.cpp
-    ConditionalStream.h
     testFSMExternalTransitions.cpp
     testFSMStateTransitions.cpp
-    testFSMv1.cpp
-    testFSMv2.cpp
     testFSMWithEnums.cpp
     testFSMWithStatePattern.cpp
-    Turnstile.cpp
-    Turnstile.h
+    testOldFSMExternalTransitions.cpp
+    testOldFSMStateTransitions.cpp
 )
 
 include(FetchContent)
@@ -27,7 +23,7 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 target_link_libraries(unitTests
-    FSM
+    common
     gtest_main
 )
 

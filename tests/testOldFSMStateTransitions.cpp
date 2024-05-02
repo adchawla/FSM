@@ -1,12 +1,12 @@
-#include "FSMWithStatePattern.h"
+#include "OldFSMStateTransitions.h"
 
 #include <gtest/gtest.h>
 
-using with_state_pattern::FSM;
+using FSM = old_fsm_state_transitions::FSM;
 
-TEST(FSMWithStatePattern, TestInitialState) {
+TEST(OldFSMStateTransitions, TestInitialState) {
     FSM fsm;
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -19,10 +19,10 @@ TEST(FSMWithStatePattern, TestInitialState) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestPaymentProcessing) {
+TEST(OldFSMStateTransitions, TestPaymentProcessing) {
     FSM fsm;
     fsm.process(CardPresented{"A"});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentProcessing);
@@ -38,10 +38,10 @@ TEST(FSMWithStatePattern, TestPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestPaymentFailed) {
+TEST(OldFSMStateTransitions, TestPaymentFailed) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentFailed);
@@ -57,10 +57,10 @@ TEST(FSMWithStatePattern, TestPaymentFailed) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway1", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
+TEST(OldFSMStateTransitions, TestTimeoutOnPaymentProcessing) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(fsm.getState(), eState::PaymentProcessing);
@@ -76,10 +76,10 @@ TEST(FSMWithStatePattern, TestTimeoutOnPaymentProcessing) {
     EXPECT_EQ(fsm.getLastTransaction(), std::make_tuple("Gateway2", "A", getFare()));
 }
 
-TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
+TEST(OldFSMStateTransitions, TestLockedFromPaymentFailed) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionDeclined{"Insufficient Funds"}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -92,10 +92,10 @@ TEST(FSMWithStatePattern, TestLockedFromPaymentFailed) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestPaymentSuccessful) {
+TEST(OldFSMStateTransitions, TestPaymentSuccessful) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::PaymentSuccess, fsm.getState());
@@ -108,10 +108,10 @@ TEST(FSMWithStatePattern, TestPaymentSuccessful) {
     EXPECT_EQ("Balance: 25", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestUnlocked) {
+TEST(OldFSMStateTransitions, TestUnlocked) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{5, 25}).process(Timeout{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Unlocked, fsm.getState());
@@ -124,10 +124,10 @@ TEST(FSMWithStatePattern, TestUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
+TEST(OldFSMStateTransitions, TestLockedFromUnlocked) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(Timeout{}).process(PersonPassed{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -140,10 +140,10 @@ TEST(FSMWithStatePattern, TestLockedFromUnlocked) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestLockedFromPaymentSuccessful) {
+TEST(OldFSMStateTransitions, TestLockedFromPaymentSuccessful) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(TransactionSuccess{}).process(PersonPassed{});
-    fsm.dump();
+    logFSM(fsm);
 
     // state transition
     EXPECT_EQ(eState::Locked, fsm.getState());
@@ -156,7 +156,7 @@ TEST(FSMWithStatePattern, TestLockedFromPaymentSuccessful) {
     EXPECT_EQ("", fsm.getPOS().getThirdRow());
 }
 
-TEST(FSMWithStatePattern, TestBug) {
+TEST(OldFSMStateTransitions, TestBug) {
     FSM fsm;
     fsm.process(CardPresented{"A"}).process(Timeout{}).process(Timeout{}).process(Timeout{}).process(Timeout{});
     EXPECT_EQ(eState::Locked, fsm.getState());
